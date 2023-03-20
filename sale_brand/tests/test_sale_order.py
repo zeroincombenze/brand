@@ -7,44 +7,63 @@ from odoo.tests.common import TransactionCase
 class TestSaleOrder(TransactionCase):
     def setUp(self):
         super(TestSaleOrder, self).setUp()
-        self.sale = self.env.ref("sale.sale_order_1")
-        self.sale.company_id.brand_use_level = "required"
-        self.sale.brand_id = self.env["res.brand"].create({"name": "brand"})
-        self.sale.order_line.mapped("product_id").write({"invoice_policy": "order"})
+        self.sale = self.env.ref('sale.sale_order_1')
+        self.sale.brand_id = self.env['res.brand'].create({'name': 'brand'})
+        self.sale.order_line.mapped('product_id').write(
+            {'invoice_policy': 'order'}
+        )
         self.sale.action_confirm()
+        self.account_receivable_type = self.env.ref(
+            'account.data_account_type_receivable'
+        )
+        self.account_receivable_brand_default = self.env[
+            'account.account'
+        ].create(
+            {
+                'name': 'Receivable Brand Default',
+                'code': 'RCV01',
+                'user_type_id': self.account_receivable_type.id,
+                'reconcile': True,
+            }
+        )
+        self.partner_account_brand = self.env['res.partner.account.brand'].create(
+            {
+                'partner_id': self.sale.partner_id.id,
+                'account_id': self.account_receivable_brand_default.id,
+                'brand_id': self.sale.brand_id.id,
+                'account_type': 'receivable',
+            }
+        )
 
     def test_create_invoice(self):
         """It should create branded invoice"""
-        self.assertEqual(self.sale.invoice_status, "to invoice")
-        invoice = self.sale._create_invoices()
+        self.assertEqual(self.sale.invoice_status, 'to invoice')
+        invoice_ids = self.sale.action_invoice_create()
+        invoice = self.env['account.invoice'].browse(invoice_ids[0])
         self.assertEqual(invoice.brand_id, self.sale.brand_id)
+        self.assertEqual(invoice.account_id, self.account_receivable_brand_default)
 
     def test_create_down_payment_invoice(self):
         """It should create branded down-payment invoice"""
-        advance_payment_wizard = self.env["sale.advance.payment.inv"].create(
-            {
-                "advance_payment_method": "fixed",
-                "fixed_amount": 10.0,
-                "sale_order_ids": [(6, 0, self.sale.ids)],
-            }
+        advance_payment_wizard = self.env['sale.advance.payment.inv'].create(
+            {'advance_payment_method': 'fixed', 'amount': 10.0}
         )
-        advance_payment_wizard.create_invoices()
-        invoice = self.sale.order_line.mapped("invoice_lines").mapped("move_id")
+        advance_payment_wizard.with_context(
+            active_ids=self.sale.ids
+        ).create_invoices()
+        invoice = self.sale.order_line.mapped('invoice_lines').mapped(
+            'invoice_id'
+        )
         self.assertEqual(invoice.brand_id, self.sale.brand_id)
 
-    def test_brand_onchange_team(self):
-        sale = self.sale.copy()
-
-        brand = sale.brand_id
-        brand2 = self.env["res.brand"].create({"name": "brand"})
-        team = self.env.ref("sales_team.team_sales_department")
-        team.brand_id = brand2.id
-
-        sale.team_id = team.id
-        sale._onchange_team_id()
-        self.assertEqual(sale.brand_id, brand2)
-
-        team.brand_id = False
-        sale.brand_id = brand.id
-        sale._onchange_team_id()
-        self.assertEqual(sale.brand_id, brand)
+    def test_sale_analytic_account_onchange_brand(self):
+        draft_sale = self.sale.copy()
+        draft_sale.brand_id.analytic_account_id = self.env[
+            'account.analytic.account'
+        ].create({'name': 'analytic account'})
+        self.assertFalse(draft_sale.analytic_account_id)
+        draft_sale._onchange_brand_id()
+        self.assertEqual(
+            draft_sale.analytic_account_id,
+            draft_sale.brand_id.analytic_account_id,
+        )

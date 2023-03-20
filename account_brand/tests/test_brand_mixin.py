@@ -2,10 +2,8 @@
 # License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl).
 
 from lxml import etree
-
+from odoo.tests.common import TransactionCase
 from odoo.exceptions import ValidationError
-from odoo.tests.common import Form, TransactionCase
-
 from odoo.addons.brand.models.res_company import BRAND_USE_LEVEL_REQUIRED_LEVEL
 
 
@@ -14,23 +12,23 @@ class TestBrandMixin(TransactionCase):
         super(TestBrandMixin, self).setUp()
         self.partner = self.env.user.partner_id
         self.company = self.env.user.company_id
-        self.other_company = self.env["res.company"].create(
-            {"name": "other company", "parent_id": self.company.id}
+        self.other_company = self.env['res.company'].create(
+            {'name': 'other company', 'parent_id': self.company.id}
         )
-        self.journal = self.env["account.journal"].create(
-            {"type": "sale", "code": "SALE", "name": "Sale journal"}
+        self.journal = self.env['account.journal'].create(
+            {'type': 'sale', 'code': 'SALE', 'name': 'Sale journal'}
         )
-        self.invoice = self.env["account.move"].create(
+        self.invoice = self.env['account.invoice'].create(
             {
-                "name": "Sample invoice",
-                "company_id": self.company.id,
-                "journal_id": self.journal.id,
-                "partner_id": self.partner.id,
+                'name': "Sample invoice",
+                'company_id': self.company.id,
+                'journal_id': self.journal.id,
+                'partner_id': self.partner.id,
             }
         )
-        self.brand = self.env["res.brand"].create({"name": "brand"})
-        self.other_company_brand = self.env["res.brand"].create(
-            {"name": "brand", "company_id": self.other_company.id}
+        self.brand = self.env['res.brand'].create({'name': 'brand'})
+        self.other_company_brand = self.env['res.brand'].create(
+            {'name': 'brand', 'company_id': self.other_company.id}
         )
 
     def test_is_brand_required(self):
@@ -39,55 +37,55 @@ class TestBrandMixin(TransactionCase):
         self.assertTrue(self.invoice._is_brand_required())
 
     def test_check_brand_requirement(self):
-        self.env["account.move"].create(
+        self.env['account.invoice'].create(
             {
-                "name": "Sample invoice",
-                "company_id": self.company.id,
-                "journal_id": self.journal.id,
-                "partner_id": self.partner.id,
+                'name': "Sample invoice",
+                'company_id': self.company.id,
+                'journal_id': self.journal.id,
+                'partner_id': self.partner.id,
             }
         )
         self.company.brand_use_level = BRAND_USE_LEVEL_REQUIRED_LEVEL
         with self.assertRaises(ValidationError):
-            self.env["account.move"].create(
+            self.env['account.invoice'].create(
                 {
-                    "name": "Sample invoice",
-                    "company_id": self.company.id,
-                    "journal_id": self.journal.id,
-                    "partner_id": self.partner.id,
+                    'name': "Sample invoice",
+                    'company_id': self.company.id,
+                    'journal_id': self.journal.id,
+                    'partner_id': self.partner.id,
                 }
             )
-        self.env["account.move"].create(
+        self.env['account.invoice'].create(
             {
-                "name": "Sample invoice",
-                "company_id": self.company.id,
-                "journal_id": self.journal.id,
-                "partner_id": self.partner.id,
-                "brand_id": self.brand.id,
+                'name': "Sample invoice",
+                'company_id': self.company.id,
+                'journal_id': self.journal.id,
+                'partner_id': self.partner.id,
+                'brand_id': self.brand.id,
             }
         )
 
     def test_check_brand_company_id(self):
-        invoice = self.env["account.move"].create(
+        invoice = self.env['account.invoice'].create(
             {
-                "name": "Sample invoice",
-                "company_id": self.company.id,
-                "journal_id": self.journal.id,
-                "partner_id": self.partner.id,
-                "brand_id": self.brand.id,
+                'name': "Sample invoice",
+                'company_id': self.company.id,
+                'journal_id': self.journal.id,
+                'partner_id': self.partner.id,
+                'brand_id': self.brand.id,
             }
         )
         with self.assertRaises(ValidationError):
             invoice.brand_id = self.other_company_brand
 
     def test_onchange_brand_id(self):
-        new_invoice = self.env["account.move"].new(
+        new_invoice = self.env['account.invoice'].new(
             {
-                "name": "Sample invoice",
-                "company_id": self.company.id,
-                "journal_id": self.journal.id,
-                "partner_id": self.partner.id,
-                "brand_id": self.brand.id,
+                'name': "Sample invoice",
+                'company_id': self.company.id,
+                'journal_id': self.journal.id,
+                'partner_id': self.partner.id,
+                'brand_id': self.brand.id,
             }
         )
         self.assertEqual(new_invoice.company_id, self.company)
@@ -95,46 +93,25 @@ class TestBrandMixin(TransactionCase):
         new_invoice._onchange_brand_id()
         self.assertEqual(new_invoice.company_id, self.other_company)
 
-    def test_get_view(self):
-        view = self.env["account.move"].get_view(
-            view_id=self.env.ref("account.view_move_form").id,
-            view_type="form",
+    def test_fields_view_get(self):
+        view = self.env['account.invoice'].fields_view_get(
+            view_id=self.env.ref(
+                'account_brand.account_invoice_view_form_brand'
+            ).id,
+            view_type='form',
         )
-        doc = etree.XML(view["arch"])
+        doc = etree.XML(view['arch'])
         self.assertTrue(doc.xpath("//field[@name='brand_use_level']"))
 
-    def test_reverse_move(self):
-        move = self.env["account.move"].create(
+    def test_refund_invoice(self):
+        invoice = self.env['account.invoice'].create(
             {
-                "name": "Sample invoice",
-                "move_type": "out_invoice",
-                "company_id": self.company.id,
-                "journal_id": self.journal.id,
-                "partner_id": self.partner.id,
-                "brand_id": self.brand.id,
-                "invoice_line_ids": [
-                    (
-                        0,
-                        0,
-                        {
-                            "product_id": self.env.ref("product.product_product_1").id,
-                            "quantity": 40.0,
-                            "name": "product test 1",
-                            "discount": 10.00,
-                            "price_unit": 2.27,
-                        },
-                    )
-                ],
+                'name': "Sample invoice",
+                'company_id': self.company.id,
+                'journal_id': self.journal.id,
+                'partner_id': self.partner.id,
+                'brand_id': self.brand.id,
             }
         )
-        move.action_post()
-        reverse_wizard = Form(
-            self.env["account.move.reversal"].with_context(
-                active_ids=move.ids, active_model="account.move"
-            )
-        )
-        reverse_wizard.reason = "modify"
-        reverse = reverse_wizard.save()
-        action = reverse.reverse_moves()
-        credit_note = self.env["account.move"].browse(action.get("res_id"))
+        credit_note = invoice.refund()
         self.assertEqual(credit_note.brand_id, self.brand)

@@ -19,15 +19,14 @@ class ResPartnerAccountBrand(models.Model):
         comodel_name="account.account",
         string="Account",
         required=True,
-        domain="[('account_type', 'in', ('liability_payable', 'asset_receivable'))]",
+        domain="[('user_type_id.type', 'in', ('payable', 'receivable'))]",
     )
-    brand_id = fields.Many2one(comodel_name="res.brand", string="Brand", required=True)
+    brand_id = fields.Many2one(
+        comodel_name='res.brand', string='Brand', required=True
+    )
     account_type = fields.Selection(
         string="Type",
-        selection=[
-            ("liability_payable", "Payable"),
-            ("asset_receivable", "Receivable"),
-        ],
+        selection=[("payable", "Payable"), ("receivable", "Receivable")],
         required=True,
     )
 
@@ -39,13 +38,13 @@ class ResPartnerAccountBrand(models.Model):
         )
     ]
 
-    @api.constrains("account_id", "account_type")
+    @api.constrains('account_id', 'account_type')
     def _check_account_type(self):
         for rec in self:
             if (
                 rec.account_id
                 and rec.account_type
-                and rec.account_id.account_type != rec.account_type
+                and rec.account_id.user_type_id.type != rec.account_type
             ):
                 raise ValidationError(
                     _("Please select an account of type %s") % rec.account_type
@@ -74,8 +73,16 @@ class ResPartnerAccountBrand(models.Model):
             ("brand_id", "=", brand.id),
             ("account_type", "=", account_type),
         ]
-        default_rule = self.search(domain + [("partner_id", "=", False)], limit=1)
+        default_rule = self.search(
+            domain + [("partner_id", "=", False)], limit=1
+        )
         partner_rule = False
         if partner:
-            partner_rule = self.search(domain + [("partner_id", "=", partner.id)])
-        return partner_rule.account_id if partner_rule else default_rule.account_id
+            partner_rule = self.search(
+                domain + [("partner_id", "=", partner.id)]
+            )
+        return (
+            partner_rule.account_id
+            if partner_rule
+            else default_rule.account_id
+        )
